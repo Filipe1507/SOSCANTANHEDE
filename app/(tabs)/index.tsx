@@ -1,125 +1,153 @@
-import { Image } from 'expo-image';
-import { Button, Platform, StyleSheet } from 'react-native';
+import { getAllReports, Report } from "@/lib/reports";
+import * as Location from "expo-location";
+import { router } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
-
-import { createReport } from '@/lib/reports';
+const STATUS_COLORS: Record<string, string> = {
+  pending: "#FFA000",
+  in_review: "#1976D2",
+  resolved: "#388E3C",
+  rejected: "#D32F2F",
+};
 
 export default function HomeScreen() {
+  const mapRef = useRef<MapView>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function init() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const loc = await Location.getCurrentPositionAsync({});
+          setLocation({
+            lat: loc.coords.latitude,
+            lng: loc.coords.longitude,
+          });
+        }
+        const data = await getAllReports();
+        setReports(data);
+      } catch (error) {
+        console.log("Erro ao inicializar mapa:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2196F3" />
+        <Text style={styles.loadingText}>A carregar mapa...</Text>
+      </View>
+    );
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
+    <View style={styles.container}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        showsUserLocation
+        showsMyLocationButton
+        initialRegion={
+          location
+            ? {
+                latitude: location.lat,
+                longitude: location.lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }
+            : {
+                // Centro de Cantanhede como fallback
+                latitude: 40.3567,
+                longitude: -8.5974,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
+              }
+        }
+      >
+        {reports.map((report) =>
+          report.location ? (
+            <Marker
+              key={report.id}
+              coordinate={{
+                latitude: report.location.lat,
+                longitude: report.location.lng,
+              }}
+              title={report.title}
+              description={report.description}
+              pinColor={STATUS_COLORS[report.status] ?? "#2196F3"}
             />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+          ) : null
+        )}
+      </MapView>
 
-        <ThemedText>
-          
-        </ThemedText>
-      </ThemedView>
-
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-
-      
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Firebase Test</ThemedText>
-
-        <Button
-          title="Criar ocorrência de teste"
-          onPress={async () => {
-            try {
-             const id = await createReport({
-                     title: "Teste",
-                     description: "Ocorrência criada pela app",
-                    category: "outro",
-                });
-              alert('Ocorrência criada! ID: ' + id);
-            } catch (error) {
-              console.log(error);
-              alert('Erro ao criar ocorrência');
-            }
-          }}
-        />
-      </ThemedView>
-    </ParallaxScrollView>
+      {/* Botão Nova Ocorrência */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.newReportBtn}
+          onPress={() => router.push("/new-report")}
+        >
+          <Text style={styles.newReportBtnText}>+ Nova Ocorrência</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  map: {
+    flex: 1,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: "#555",
+  },
+  bottomBar: {
+    position: "absolute",
+    bottom: 32,
     left: 0,
-    position: 'absolute',
+    right: 0,
+    alignItems: "center",
+  },
+  newReportBtn: {
+    backgroundColor: "#fff",
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  newReportBtnText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111",
   },
 });

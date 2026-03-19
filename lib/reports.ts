@@ -5,7 +5,6 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  Timestamp,
   where,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
@@ -27,12 +26,13 @@ export type Report = {
   category: ReportCategory;
   status: ReportStatus;
   userId: string;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
+  createdAt?: any;
+  updatedAt?: any;
   imageUrl?: string | null;
   location?: {
     lat: number;
     lng: number;
+    address?: string;
   } | null;
 };
 
@@ -44,23 +44,16 @@ type CreateReportInput = {
   location?: {
     lat: number;
     lng: number;
+    address?: string;
   } | null;
 };
 
 export async function createReport(data: CreateReportInput): Promise<string> {
   const uid = auth.currentUser?.uid;
 
-  if (!uid) {
-    throw new Error("Utilizador não autenticado.");
-  }
-
-  if (!data.title.trim()) {
-    throw new Error("O título é obrigatório.");
-  }
-
-  if (!data.description.trim()) {
-    throw new Error("A descrição é obrigatória.");
-  }
+  if (!uid) throw new Error("Utilizador não autenticado.");
+  if (!data.title.trim()) throw new Error("O título é obrigatório.");
+  if (!data.description.trim()) throw new Error("A descrição é obrigatória.");
 
   const ref = await addDoc(collection(db, "reports"), {
     title: data.title.trim(),
@@ -79,14 +72,25 @@ export async function createReport(data: CreateReportInput): Promise<string> {
 
 export async function getMyReports(): Promise<Report[]> {
   const uid = auth.currentUser?.uid;
-
-  if (!uid) {
-    return [];
-  }
+  if (!uid) return [];
 
   const q = query(
     collection(db, "reports"),
     where("userId", "==", uid),
+    orderBy("createdAt", "desc")
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Report, "id">),
+  }));
+}
+
+export async function getAllReports(): Promise<Report[]> {
+  const q = query(
+    collection(db, "reports"),
     orderBy("createdAt", "desc")
   );
 

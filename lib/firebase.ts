@@ -1,7 +1,7 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDJKzXA7jaWu-Z29xUKe0GCZZ4uCzQtOkA",
@@ -10,11 +10,14 @@ const firebaseConfig = {
   storageBucket: "sos-cantanhede.firebasestorage.app",
   messagingSenderId: "684104116676",
   appId: "1:684104116676:web:23284a418c8abc6fb55c91",
-  measurementId: "G-SKQ67L6Y4H",
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+export const auth = getApps().length
+  ? getAuth(app)
+  : initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+
 export const db = getFirestore(app);
-export const storage = getStorage(app);
