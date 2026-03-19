@@ -30,8 +30,8 @@ export type Report = {
   updatedAt?: any;
   imageUrl?: string | null;
   location?: {
-    lat: number;
-    lng: number;
+    lat?: number;
+    lng?: number;
     address?: string;
   } | null;
 };
@@ -42,8 +42,8 @@ type CreateReportInput = {
   category: ReportCategory;
   imageUrl?: string | null;
   location?: {
-    lat: number;
-    lng: number;
+    lat?: number;
+    lng?: number;
     address?: string;
   } | null;
 };

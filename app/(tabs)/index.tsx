@@ -80,20 +80,20 @@ export default function HomeScreen() {
               }
         }
       >
-        {reports.map((report) =>
-          report.location ? (
-            <Marker
-              key={report.id}
-              coordinate={{
-                latitude: report.location.lat,
-                longitude: report.location.lng,
-              }}
-              title={report.title}
-              description={report.description}
-              pinColor={STATUS_COLORS[report.status] ?? "#2196F3"}
-            />
-          ) : null
-        )}
+              {reports.map((report) =>
+        report.location?.lat && report.location?.lng ? (
+          <Marker
+            key={report.id}
+            coordinate={{
+              latitude: report.location.lat,
+              longitude: report.location.lng,
+            }}
+            title={report.title}
+            description={report.description}
+            pinColor={STATUS_COLORS[report.status] ?? "#2196F3"}
+          />
+        ) : null
+      )}
       </MapView>
 
       {/* Botão Nova Ocorrência */}

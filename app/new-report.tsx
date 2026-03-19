@@ -33,33 +33,52 @@ const CANTANHEDE: Region = {
   longitudeDelta: 0.05,
 };
 
+type LocationMode = "gps" | "map" | "manual" | null;
+
+type LocationData = {
+  lat?: number;
+  lng?: number;
+  address?: string;
+};
+
 async function getAddressFromCoords(lat: number, lng: number): Promise<string> {
   try {
-    const base = "https:";
-    const path = '//nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1';
-    const url = base+path;
+    const params = "lat=" + lat + "&lon=" + lng + "&format=json&accept-language=pt";
+    const url = "https://nominatim.openstreetmap.org/reverse?" + params;
 
-    const response = await fetch(url, {
-      headers: {
-        "Accept-Language": "pt",
-        "User-Agent": "SOSCantanhede/1.0",
-      },
-    });
+    const response = await fetch(url);
     const data = await response.json();
 
     if (data && data.address) {
       const a = data.address;
-      const parts = [
+
+      const full = [
         a.road,
         a.house_number,
-        a.village || a.town || a.city,
-        a.municipality,
+        a.village || a.town || a.city || a.county,
+        a.municipality || a.state,
       ].filter(Boolean);
-      return parts.join(", ");
+
+      if (full.length > 0) return full.join(", ");
+
+      const partial = [
+        a.suburb || a.neighbourhood,
+        a.village || a.town || a.city || a.county,
+        a.municipality || a.state,
+      ].filter(Boolean);
+
+      if (partial.length > 0) return partial.join(", ");
+
+      if (data.display_name) return data.display_name;
     }
-    return "Localização desconhecida";
-  } catch {
-    return "Localização desconhecida";
+
+    const latStr = lat.toFixed(5);
+    const lngStr = lng.toFixed(5);
+    return latStr + ", " + lngStr;
+  } catch (e) {
+    const latStr = lat.toFixed(5);
+    const lngStr = lng.toFixed(5);
+    return latStr + ", " + lngStr;
   }
 }
 
@@ -71,12 +90,9 @@ export default function NewReportScreen() {
   const [image, setImage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [location, setLocation] = useState<{
-    lat: number;
-    lng: number;
-    address?: string;
-  } | null>(null);
-  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  const [locationMode, setLocationMode] = useState<LocationMode>(null);
+  const [location, setLocation] = useState<LocationData | null>(null);
+  const [manualAddress, setManualAddress] = useState("");
   const [mapVisible, setMapVisible] = useState(false);
   const [mapRegion, setMapRegion] = useState<Region>(CANTANHEDE);
   const [pinCoords, setPinCoords] = useState<{
@@ -84,7 +100,15 @@ export default function NewReportScreen() {
     longitude: number;
   } | null>(null);
 
+  const clearLocation = () => {
+    setLocationMode(null);
+    setLocation(null);
+    setManualAddress("");
+    setPinCoords(null);
+  };
+
   const useCurrentLocation = async () => {
+    clearLocation();
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
@@ -92,44 +116,30 @@ export default function NewReportScreen() {
         return;
       }
       const loc = await Location.getCurrentPositionAsync({});
-      const coords = {
-        lat: loc.coords.latitude,
-        lng: loc.coords.longitude,
-      };
-
+      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
       const address = await getAddressFromCoords(coords.lat, coords.lng);
-
-      setLocation({ lat: coords.lat, lng: coords.lng, address });
-      setLocationLabel(address);
-    } catch (e) {
+      setLocation({ ...coords, address });
+      setLocationMode("gps");
+    } catch {
       Alert.alert("Erro", "Não foi possível obter a localização.");
     }
   };
 
   const openMapPicker = async () => {
-    if (location) {
-      setMapRegion({
-        latitude: location.lat,
-        longitude: location.lng,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
-      setPinCoords({ latitude: location.lat, longitude: location.lng });
-    } else {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === "granted") {
-          const loc = await Location.getCurrentPositionAsync({});
-          setMapRegion({
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          });
-        }
-      } catch {
-        // fallback para Cantanhede
+    clearLocation();
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({});
+        setMapRegion({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        });
       }
+    } catch {
+      // fallback para Cantanhede
     }
     setMapVisible(true);
   };
@@ -150,8 +160,13 @@ export default function NewReportScreen() {
       lng: pinCoords.longitude,
       address,
     });
-    setLocationLabel(address);
+    setLocationMode("map");
     setMapVisible(false);
+  };
+
+  const selectManual = () => {
+    clearLocation();
+    setLocationMode("manual");
   };
 
   const pickImage = async () => {
@@ -192,12 +207,19 @@ export default function NewReportScreen() {
       let imageUrl = null;
       if (image) imageUrl = await uploadImage(image);
 
+      let finalLocation: LocationData | null = null;
+      if (locationMode === "manual" && manualAddress.trim()) {
+        finalLocation = { address: manualAddress.trim() };
+      } else if (location) {
+        finalLocation = location;
+      }
+
       await createReport({
         title: title.trim(),
         description: description.trim(),
         category,
         imageUrl,
-        location,
+        location: finalLocation,
       });
 
       Alert.alert("Sucesso", "Ocorrência criada com sucesso.");
@@ -268,43 +290,77 @@ export default function NewReportScreen() {
         <Text style={styles.label}>Localização</Text>
 
         <View style={styles.locationButtons}>
-          <TouchableOpacity style={styles.locationBtn} onPress={useCurrentLocation}>
-            <Text style={styles.locationBtnText}>📡 Localização atual</Text>
+          <TouchableOpacity
+            style={[
+              styles.locationBtn,
+              locationMode === "gps" && styles.locationBtnActive,
+            ]}
+            onPress={useCurrentLocation}
+          >
+            <Text
+              style={[
+                styles.locationBtnText,
+                locationMode === "gps" && styles.locationBtnTextActive,
+              ]}
+            >
+              📡 Localização atual
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.locationBtn} onPress={openMapPicker}>
-            <Text style={styles.locationBtnText}>🗺️ Escolher no mapa</Text>
+
+          <TouchableOpacity
+            style={[
+              styles.locationBtn,
+              locationMode === "map" && styles.locationBtnActive,
+            ]}
+            onPress={openMapPicker}
+          >
+            <Text
+              style={[
+                styles.locationBtnText,
+                locationMode === "map" && styles.locationBtnTextActive,
+              ]}
+            >
+              🗺️ Escolher no mapa
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.locationBtn,
+              locationMode === "manual" && styles.locationBtnActive,
+            ]}
+            onPress={selectManual}
+          >
+            <Text
+              style={[
+                styles.locationBtnText,
+                locationMode === "manual" && styles.locationBtnTextActive,
+              ]}
+            >
+              ✏️ Escrever morada
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {locationLabel !== null && (
-          <>
-            <View style={styles.locationBadge}>
-              <Text style={styles.locationBadgeText} numberOfLines={2}>
-                📍 {locationLabel}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setLocation(null);
-                  setLocationLabel(null);
-                }}
-              >
-                <Text style={styles.locationClear}>✕</Text>
-              </TouchableOpacity>
-            </View>
+        {(locationMode === "gps" || locationMode === "map") && location?.address && (
+          <View style={styles.locationBadge}>
+            <Text style={styles.locationBadgeText} numberOfLines={2}>
+              📍 {location.address}
+            </Text>
+            <TouchableOpacity onPress={clearLocation}>
+              <Text style={styles.locationClear}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-            <TextInput
-              placeholder="Corrigir morada se necessário"
-              placeholderTextColor="#999"
-              value={locationLabel}
-              onChangeText={(text) => {
-                setLocationLabel(text);
-                setLocation((prev) =>
-                  prev ? { ...prev, address: text } : null
-                );
-              }}
-              style={styles.input}
-            />
-          </>
+        {locationMode === "manual" && (
+          <TextInput
+            placeholder="Ex: Rua Manuel Lopes Porto, Cantanhede"
+            placeholderTextColor="#999"
+            value={manualAddress}
+            onChangeText={setManualAddress}
+            style={styles.input}
+          />
         )}
 
         <Text style={styles.label}>Fotografia</Text>
@@ -431,6 +487,32 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
+  locationButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  locationBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#fff",
+  },
+  locationBtnActive: {
+    backgroundColor: "#2196F3",
+    borderColor: "#2196F3",
+  },
+  locationBtnText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#333",
+  },
+  locationBtnTextActive: {
+    color: "#fff",
+    fontWeight: "600",
+  },
   locationBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -450,24 +532,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1565C0",
     paddingLeft: 8,
-  },
-  locationButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  locationBtn: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    backgroundColor: "#fff",
-    alignItems: "center",
-  },
-  locationBtnText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#333",
   },
   imageButtons: {
     flexDirection: "row",
