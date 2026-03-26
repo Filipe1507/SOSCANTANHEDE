@@ -1,13 +1,16 @@
+import { auth, db } from "@/lib/firebase";
 import {
   addDoc,
   collection,
+  doc,
   getDocs,
+  limit,
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
-import { auth, db } from "./firebase";
 
 export type ReportStatus = "pending" | "in_review" | "resolved" | "rejected";
 
@@ -50,7 +53,6 @@ type CreateReportInput = {
 
 export async function createReport(data: CreateReportInput): Promise<string> {
   const uid = auth.currentUser?.uid;
-
   if (!uid) throw new Error("Utilizador não autenticado.");
   if (!data.title.trim()) throw new Error("O título é obrigatório.");
   if (!data.description.trim()) throw new Error("A descrição é obrigatória.");
@@ -81,23 +83,55 @@ export async function getMyReports(): Promise<Report[]> {
   );
 
   const snap = await getDocs(q);
-
   return snap.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<Report, "id">),
   }));
 }
 
+// Para o mapa — exclui resolvidas e rejeitadas, máximo 50
 export async function getAllReports(): Promise<Report[]> {
   const q = query(
     collection(db, "reports"),
-    orderBy("createdAt", "desc")
+    orderBy("createdAt", "desc"),
+    limit(50)
   );
 
   const snap = await getDocs(q);
 
+  return snap.docs
+    .map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<Report, "id">),
+    }))
+    .filter((r) => r.status !== "resolved" && r.status !== "rejected");
+}
+
+// Para o painel de admin — só pendentes e em revisão
+export async function getPendingReports(): Promise<Report[]> {
+  const q = query(
+    collection(db, "reports"),
+    where("status", "in", ["pending", "in_review"]),
+    orderBy("createdAt", "desc")
+  );
+
+  const snap = await getDocs(q);
   return snap.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<Report, "id">),
   }));
+}
+
+export async function resolveReport(reportId: string): Promise<void> {
+  await updateDoc(doc(db, "reports", reportId), {
+    status: "resolved" as ReportStatus,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function rejectReport(reportId: string): Promise<void> {
+  await updateDoc(doc(db, "reports", reportId), {
+    status: "rejected" as ReportStatus,
+    updatedAt: serverTimestamp(),
+  });
 }
