@@ -2,6 +2,7 @@ import { Link, router } from "expo-router";
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { loginUser } from "../lib/auth";
+import { auth } from "../lib/firebase";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -37,6 +38,16 @@ export default function LoginScreen() {
           setMsg("");
           try {
             await loginUser(email.trim(), password);
+
+            // Verifica se o email foi confirmado
+            if (!auth.currentUser?.emailVerified) {
+              await auth.signOut();
+              setMsg(
+                "Email ainda não verificado. Verifica a tua caixa de entrada e clica no link enviado."
+              );
+              return;
+            }
+
             router.replace("/");
           } catch (e: any) {
             setMsg(e?.message ?? "Erro no login");
@@ -94,6 +105,7 @@ const styles = StyleSheet.create({
   error: {
     color: "red",
     fontSize: 13,
+    lineHeight: 18,
   },
   link: {
     color: "#2196F3",
