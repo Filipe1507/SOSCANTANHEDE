@@ -80,8 +80,8 @@ lib/
 
 1. Clona o repositório
 ```bash
-git clone https://github.com/Filipe1507/sos-cantanhede.git
-cd sos-cantanhede
+git clone https://github.com/Filipe1507/SOSCANTANHEDE.git
+cd SOSCANTANHEDE
 ```
 
 2. Instala as dependências
