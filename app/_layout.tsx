@@ -2,6 +2,7 @@ import { auth } from "@/lib/firebase";
 import { router, Stack } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
@@ -9,8 +10,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      setIsAuthenticated(!!user);
-      setReady(true);
+      setIsAuthenticated(!!user && user.emailVerified);
+
+      // Tempo mínimo de 2 segundos para mostrar o splash
+      setTimeout(() => setReady(true), 2000);
     });
     return unsub;
   }, []);
@@ -24,7 +27,18 @@ export default function RootLayout() {
     }
   }, [ready, isAuthenticated]);
 
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <View style={styles.splashContainer}>
+        <Image
+          source={require("../assets/images/splash-icon.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <ActivityIndicator size="large" color="#2196F3" style={styles.spinner} />
+      </View>
+    );
+  }
 
   return (
     <Stack>
@@ -38,3 +52,20 @@ export default function RootLayout() {
     </Stack>
   );
 }
+
+const styles = StyleSheet.create({
+  splashContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  logo: {
+    width: 350,
+    height: 350,
+    marginBottom: 32,
+  },
+  spinner: {
+    marginTop: 8,
+  },
+});

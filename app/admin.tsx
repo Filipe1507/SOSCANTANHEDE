@@ -1,16 +1,15 @@
-import { getPendingReports, rejectReport, Report, resolveReport } from "@/lib/reports";
-import { router } from "expo-router";
+import { getAllReportsAdmin, rejectReport, Report, resolveReport, setInReview } from "@/lib/reports";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -25,22 +24,31 @@ const CATEGORY_LABELS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
   in_review: "Em análise",
+  resolved: "Resolvida",
+  rejected: "Rejeitada",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#FFA000",
   in_review: "#1976D2",
+  resolved: "#388E3C",
+  rejected: "#D32F2F",
 };
+
+type FilterStatus = "all" | "pending" | "in_review" | "resolved" | "rejected";
+type FilterCategory = "all" | string;
 
 export default function AdminScreen() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+  const [filterCategory, setFilterCategory] = useState<FilterCategory>("all");
 
   async function loadReports() {
     try {
-      const data = await getPendingReports();
+      const data = await getAllReportsAdmin();
       setReports(data);
     } catch {
       Alert.alert("Erro", "Não foi possível carregar as ocorrências.");
@@ -54,10 +62,39 @@ export default function AdminScreen() {
     loadReports();
   }, []);
 
+  const filtered = reports.filter((r) => {
+    const statusOk = filterStatus === "all" || r.status === filterStatus;
+    const categoryOk = filterCategory === "all" || r.category === filterCategory;
+    return statusOk && categoryOk;
+  });
+
+  // Estatísticas
+  const stats = {
+    total: reports.length,
+    pending: reports.filter((r) => r.status === "pending").length,
+    in_review: reports.filter((r) => r.status === "in_review").length,
+    resolved: reports.filter((r) => r.status === "resolved").length,
+    rejected: reports.filter((r) => r.status === "rejected").length,
+  };
+
+  async function handleSetInReview(report: Report) {
+    setActioning(report.id);
+    try {
+      await setInReview(report.id);
+      setReports((prev) =>
+        prev.map((r) => (r.id === report.id ? { ...r, status: "in_review" } : r))
+      );
+    } catch {
+      Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
+    } finally {
+      setActioning(null);
+    }
+  }
+
   async function handleResolve(report: Report) {
     Alert.alert(
       "Marcar como resolvida",
-      `Confirmas que a ocorrência "${report.title}" foi resolvida?`,
+      `Confirmas que "${report.title}" foi resolvida?`,
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -66,7 +103,9 @@ export default function AdminScreen() {
             setActioning(report.id);
             try {
               await resolveReport(report.id);
-              setReports((prev) => prev.filter((r) => r.id !== report.id));
+              setReports((prev) =>
+                prev.map((r) => (r.id === report.id ? { ...r, status: "resolved" } : r))
+              );
             } catch {
               Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
             } finally {
@@ -91,7 +130,9 @@ export default function AdminScreen() {
             setActioning(report.id);
             try {
               await rejectReport(report.id);
-              setReports((prev) => prev.filter((r) => r.id !== report.id));
+              setReports((prev) =>
+                prev.map((r) => (r.id === report.id ? { ...r, status: "rejected" } : r))
+              );
             } catch {
               Alert.alert("Erro", "Não foi possível rejeitar a ocorrência.");
             } finally {
@@ -125,25 +166,73 @@ export default function AdminScreen() {
         />
       }
     >
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Painel Admin</Text>
-        <Text style={styles.subtitle}>
-          {reports.length === 0
-            ? "Sem ocorrências por resolver ✅"
-            : `${reports.length} ocorrência${reports.length !== 1 ? "s" : ""} pendente${reports.length !== 1 ? "s" : ""}`}
-        </Text>
       </View>
 
-      {reports.length === 0 ? (
+      {/* Estatísticas */}
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{stats.total}</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+        <View style={[styles.statBox, { borderTopColor: "#FFA000" }]}>
+          <Text style={styles.statNumber}>{stats.pending}</Text>
+          <Text style={styles.statLabel}>Pendentes</Text>
+        </View>
+        <View style={[styles.statBox, { borderTopColor: "#1976D2" }]}>
+          <Text style={styles.statNumber}>{stats.in_review}</Text>
+          <Text style={styles.statLabel}>Em análise</Text>
+        </View>
+        <View style={[styles.statBox, { borderTopColor: "#388E3C" }]}>
+          <Text style={styles.statNumber}>{stats.resolved}</Text>
+          <Text style={styles.statLabel}>Resolvidas</Text>
+        </View>
+      </View>
+
+      {/* Filtro por estado */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+        {(["all", "pending", "in_review", "resolved", "rejected"] as FilterStatus[]).map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={[styles.filterChip, filterStatus === s && styles.filterChipActive]}
+            onPress={() => setFilterStatus(s)}
+          >
+            <Text style={[styles.filterChipText, filterStatus === s && styles.filterChipTextActive]}>
+              {s === "all" ? "Todos" : STATUS_LABELS[s]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Filtro por categoria */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+        {(["all", "infraestrutura", "iluminacao", "residuos", "transito", "ambiente", "outro"] as string[]).map((c) => (
+          <TouchableOpacity
+            key={c}
+            style={[styles.filterChip, filterCategory === c && styles.filterChipActive]}
+            onPress={() => setFilterCategory(c)}
+          >
+            <Text style={[styles.filterChipText, filterCategory === c && styles.filterChipTextActive]}>
+              {c === "all" ? "Todas categorias" : CATEGORY_LABELS[c]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <Text style={styles.resultsText}>
+        {filtered.length} ocorrência{filtered.length !== 1 ? "s" : ""}
+      </Text>
+
+      {/* Lista */}
+      {filtered.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>🎉</Text>
-          <Text style={styles.emptyText}>Todas as ocorrências foram tratadas!</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backBtnText}>Voltar ao mapa</Text>
-          </TouchableOpacity>
+          <Text style={styles.emptyText}>Nenhuma ocorrência encontrada.</Text>
         </View>
       ) : (
-        reports.map((report) => (
+        filtered.map((report) => (
           <View key={report.id} style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardCategory}>
@@ -168,6 +257,19 @@ export default function AdminScreen() {
               <Text style={styles.cardLocation}>📍 {report.location.address}</Text>
             )}
 
+            {report.userName && (
+              <Text style={styles.cardUser}>👤 {report.userName}</Text>
+            )}
+
+            {report.createdAt?.toDate && (
+              <Text style={styles.cardDate}>
+                🕐 {report.createdAt.toDate().toLocaleDateString("pt-PT", {
+                  day: "2-digit", month: "2-digit", year: "numeric",
+                  hour: "2-digit", minute: "2-digit"
+                })}
+              </Text>
+            )}
+
             {report.imageUrl && (
               <Image
                 source={{ uri: report.imageUrl }}
@@ -176,27 +278,40 @@ export default function AdminScreen() {
               />
             )}
 
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={[styles.rejectBtn, actioning === report.id && styles.btnDisabled]}
-                onPress={() => handleReject(report)}
-                disabled={actioning === report.id}
-              >
-                <Text style={styles.rejectBtnText}>✕ Rejeitar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.resolveBtn, actioning === report.id && styles.btnDisabled]}
-                onPress={() => handleResolve(report)}
-                disabled={actioning === report.id}
-              >
-                {actioning === report.id ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.resolveBtnText}>✓ Concluído</Text>
+            {/* Ações — só para pendentes e em análise */}
+            {(report.status === "pending" || report.status === "in_review") && (
+              <View style={styles.cardActions}>
+                {report.status === "pending" && (
+                  <TouchableOpacity
+                    style={[styles.reviewBtn, actioning === report.id && styles.btnDisabled]}
+                    onPress={() => handleSetInReview(report)}
+                    disabled={actioning === report.id}
+                  >
+                    <Text style={styles.reviewBtnText}>🔍 Em análise</Text>
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-            </View>
+
+                <TouchableOpacity
+                  style={[styles.rejectBtn, actioning === report.id && styles.btnDisabled]}
+                  onPress={() => handleReject(report)}
+                  disabled={actioning === report.id}
+                >
+                  <Text style={styles.rejectBtnText}>✕ Rejeitar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.resolveBtn, actioning === report.id && styles.btnDisabled]}
+                  onPress={() => handleResolve(report)}
+                  disabled={actioning === report.id}
+                >
+                  {actioning === report.id ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.resolveBtnText}>✓ Concluído</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ))
       )}
@@ -219,22 +334,48 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
   },
   loadingText: { fontSize: 15, color: "#555" },
-  header: { gap: 4, marginBottom: 4 },
+  header: { gap: 4 },
   title: { fontSize: 24, fontWeight: "700", color: "#111" },
-  subtitle: { fontSize: 14, color: "#666" },
-  emptyContainer: { alignItems: "center", paddingTop: 60, gap: 12 },
+  statsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 10,
+    alignItems: "center",
+    borderTopWidth: 3,
+    borderTopColor: "#ccc",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  statNumber: { fontSize: 20, fontWeight: "700", color: "#111" },
+  statLabel: { fontSize: 11, color: "#666", marginTop: 2 },
+  filterRow: { flexGrow: 0, marginBottom: 4 },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: "#fff",
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  filterChipActive: {
+    backgroundColor: "#2196F3",
+    borderColor: "#2196F3",
+  },
+  filterChipText: { fontSize: 13, color: "#555" },
+  filterChipTextActive: { color: "#fff", fontWeight: "600" },
+  resultsText: { fontSize: 13, color: "#888" },
+  emptyContainer: { alignItems: "center", paddingTop: 40, gap: 12 },
   emptyEmoji: { fontSize: 48 },
   emptyText: { fontSize: 16, color: "#555", textAlign: "center" },
-  backBtn: {
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    backgroundColor: "#fff",
-  },
-  backBtnText: { fontSize: 15, color: "#333", fontWeight: "500" },
   card: {
     backgroundColor: "#fff",
     borderRadius: 14,
@@ -257,8 +398,18 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
   cardDescription: { fontSize: 14, color: "#444", lineHeight: 20 },
   cardLocation: { fontSize: 12, color: "#777" },
+  cardUser: { fontSize: 12, color: "#555", fontWeight: "500" },
+  cardDate: { fontSize: 12, color: "#999" },
   cardImage: { width: "100%", height: 180, borderRadius: 8, marginTop: 4 },
-  cardActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  cardActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  reviewBtn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#1976D2",
+    alignItems: "center",
+  },
+  reviewBtnText: { fontSize: 13, fontWeight: "600", color: "#fff" },
   rejectBtn: {
     flex: 1,
     padding: 12,
@@ -267,7 +418,7 @@ const styles = StyleSheet.create({
     borderColor: "#D32F2F",
     alignItems: "center",
   },
-  rejectBtnText: { fontSize: 14, fontWeight: "600", color: "#D32F2F" },
+  rejectBtnText: { fontSize: 13, fontWeight: "600", color: "#D32F2F" },
   resolveBtn: {
     flex: 1,
     padding: 12,
@@ -275,6 +426,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#388E3C",
     alignItems: "center",
   },
-  resolveBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  resolveBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   btnDisabled: { opacity: 0.5 },
 });

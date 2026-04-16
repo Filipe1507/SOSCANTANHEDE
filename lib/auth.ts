@@ -29,6 +29,9 @@ export async function registerUser(
     createdAt: serverTimestamp(),
   });
 
+  // Faz logout imediato para forçar login manual
+  await signOut(auth);
+
   return cred.user;
 }
 

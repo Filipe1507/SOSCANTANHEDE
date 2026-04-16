@@ -16,8 +16,8 @@ import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 const COLORS = {
   othersPending: "#FF6B00",
   othersReview:  "#1565C0",
-  minePending:   "#AD1457",
-  mineReview:    "#6A1B9A",
+  minePending:   "#E91E8C",
+  mineReview:    "#9C27B0",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,6 +43,43 @@ function getPinColor(report: Report, currentUid: string | undefined): string {
   }
   return report.status === "in_review" ? COLORS.othersReview : COLORS.othersPending;
 }
+
+function CustomMarker({ color }: { color: string }) {
+  return (
+    <View style={markerStyles.container}>
+      <View style={[markerStyles.circle, { backgroundColor: color }]} />
+      <View style={[markerStyles.tail, { borderTopColor: color }]} />
+    </View>
+  );
+}
+
+const markerStyles = StyleSheet.create({
+  container: {
+    alignItems: "center",
+  },
+  circle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  tail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    marginTop: -1,
+  },
+});
 
 export default function HomeScreen() {
   const mapRef = useRef<MapView>(null);
@@ -116,9 +153,10 @@ export default function HomeScreen() {
                 latitude: report.location.lat,
                 longitude: report.location.lng,
               }}
-              pinColor={color}
               onPress={() => setSelectedReport(report)}
-            />
+            >
+              <CustomMarker color={color} />
+            </Marker>
           );
         })}
       </MapView>

@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -29,6 +30,7 @@ export type Report = {
   category: ReportCategory;
   status: ReportStatus;
   userId: string;
+  userName?: string;
   createdAt?: any;
   updatedAt?: any;
   imageUrl?: string | null;
@@ -122,6 +124,42 @@ export async function getPendingReports(): Promise<Report[]> {
   }));
 }
 
+// Para o painel de admin — TODAS as ocorrências com nome do utilizador
+export async function getAllReportsAdmin(): Promise<Report[]> {
+  const q = query(
+    collection(db, "reports"),
+    orderBy("createdAt", "desc")
+  );
+
+  const snap = await getDocs(q);
+  const reports = snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Report, "id">),
+  }));
+
+  // Buscar nomes dos utilizadores
+  const userIds = [...new Set(reports.map((r) => r.userId))];
+  const userNames: Record<string, string> = {};
+
+  await Promise.all(
+    userIds.map(async (uid) => {
+      try {
+        const userSnap = await getDoc(doc(db, "users", uid));
+        if (userSnap.exists()) {
+          userNames[uid] = userSnap.data().name ?? "Utilizador";
+        }
+      } catch {
+        userNames[uid] = "Utilizador";
+      }
+    })
+  );
+
+  return reports.map((r) => ({
+    ...r,
+    userName: userNames[r.userId] ?? "Utilizador",
+  }));
+}
+
 export async function resolveReport(reportId: string): Promise<void> {
   await updateDoc(doc(db, "reports", reportId), {
     status: "resolved" as ReportStatus,
@@ -132,6 +170,13 @@ export async function resolveReport(reportId: string): Promise<void> {
 export async function rejectReport(reportId: string): Promise<void> {
   await updateDoc(doc(db, "reports", reportId), {
     status: "rejected" as ReportStatus,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function setInReview(reportId: string): Promise<void> {
+  await updateDoc(doc(db, "reports", reportId), {
+    status: "in_review" as ReportStatus,
     updatedAt: serverTimestamp(),
   });
 }
