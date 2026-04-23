@@ -1,6 +1,13 @@
 import { Link, router } from "expo-router";
 import { useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity
+} from "react-native";
 import { loginUser } from "../lib/auth";
 import { auth } from "../lib/firebase";
 
@@ -10,65 +17,68 @@ export default function LoginScreen() {
   const [msg, setMsg] = useState("");
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
-
-      <TextInput
-        placeholder="Email"
-        placeholderTextColor="#999"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        style={styles.input}
-      />
-
-      <TextInput
-        placeholder="Password"
-        placeholderTextColor="#999"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-        style={styles.input}
-      />
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={async () => {
-          setMsg("");
-          try {
-            await loginUser(email.trim(), password);
-
-            // Verifica se o email foi confirmado
-            if (!auth.currentUser?.emailVerified) {
-              await auth.signOut();
-              setMsg(
-                "Email ainda não verificado. Verifica a tua caixa de entrada e clica no link enviado."
-              );
-              return;
-            }
-
-            router.replace("/");
-          } catch (e: any) {
-            setMsg(e?.message ?? "Erro no login");
-          }
-        }}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior= "padding" 
+    >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.buttonText}>ENTRAR</Text>
-      </TouchableOpacity>
+        <Text style={styles.title}>Login</Text>
 
-      {!!msg && <Text style={styles.error}>{msg}</Text>}
+        <TextInput
+          placeholder="Email"
+          placeholderTextColor="#999"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+          style={styles.input}
+        />
 
-      <Link href="/register">
-        <Text style={styles.link}>Não tens conta? Regista-te</Text>
-      </Link>
-    </View>
+        <TextInput
+          placeholder="Password"
+          placeholderTextColor="#999"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          style={styles.input}
+        />
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={async () => {
+            setMsg("");
+            try {
+              await loginUser(email.trim(), password);
+              if (!auth.currentUser?.emailVerified) {
+                await auth.signOut();
+                setMsg("Email ainda não verificado. Verifica a tua caixa de entrada e clica no link enviado.");
+                return;
+              }
+              router.replace("/");
+            } catch (e: any) {
+              setMsg(e?.message ?? "Erro no login");
+            }
+          }}
+        >
+          <Text style={styles.buttonText}>ENTRAR</Text>
+        </TouchableOpacity>
+
+        {!!msg && <Text style={styles.error}>{msg}</Text>}
+
+        <Link href="/register">
+          <Text style={styles.link}>Não tens conta? Regista-te</Text>
+        </Link>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     padding: 24,
     gap: 12,

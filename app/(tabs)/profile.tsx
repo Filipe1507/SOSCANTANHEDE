@@ -3,11 +3,11 @@ import { auth } from "@/lib/firebase";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    Alert,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function ProfileScreen() {
@@ -64,6 +64,14 @@ export default function ProfileScreen() {
             <Text style={styles.itemArrow}>›</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity
+          style={styles.item}
+          onPress={() => router.push("/edit-profile")}
+        >
+          <Text style={styles.itemText}>✏️ Editar Perfil</Text>
+          <Text style={styles.itemArrow}>›</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.item}

@@ -1,10 +1,11 @@
+import { isResidentOfCantanhede } from "@/lib/auth";
 import { ADDRESS_NOT_FOUND_MESSAGE, isInCantanhede, OUT_OF_BOUNDS_MESSAGE, validateManualAddress } from "@/lib/location";
 import { createReport, ReportCategory } from "@/lib/reports";
 import { uploadImage } from "@/lib/storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -83,6 +84,8 @@ export default function NewReportScreen() {
   const [image, setImage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [validatingAddress, setValidatingAddress] = useState(false);
+  const [residentOfCantanhede, setResidentOfCantanhede] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [locationMode, setLocationMode] = useState<LocationMode>(null);
   const [location, setLocation] = useState<LocationData | null>(null);
@@ -94,6 +97,15 @@ export default function NewReportScreen() {
     latitude: number;
     longitude: number;
   } | null>(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      const resident = await isResidentOfCantanhede();
+      setResidentOfCantanhede(resident);
+      setLoadingProfile(false);
+    }
+    loadProfile();
+  }, []);
 
   const clearLocation = () => {
     setLocationMode(null);
@@ -170,7 +182,6 @@ export default function NewReportScreen() {
     setLocationMode("manual");
   };
 
-  // Valida a morada manual ao clicar "Confirmar morada"
   const confirmManualAddress = async () => {
     if (!manualAddress.trim()) {
       Alert.alert("Atenção", "Escreve uma morada antes de confirmar.");
@@ -242,9 +253,7 @@ export default function NewReportScreen() {
       if (image) imageUrl = await uploadImage(image);
 
       let finalLocation: LocationData | null = null;
-      if (location) {
-        finalLocation = location;
-      }
+      if (location) finalLocation = location;
 
       await createReport({
         title: title.trim(),
@@ -261,6 +270,14 @@ export default function NewReportScreen() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (loadingProfile) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2196F3" />
+      </View>
+    );
   }
 
   return (
@@ -324,6 +341,12 @@ export default function NewReportScreen() {
           ⚠️ Apenas são aceites localizações dentro do concelho de Cantanhede.
         </Text>
 
+        {!residentOfCantanhede && (
+          <Text style={styles.locationRestriction}>
+            ℹ️ Como não és residente de Cantanhede, só podes submeter ocorrências com localização GPS (tens de estar no concelho no momento).
+          </Text>
+        )}
+
         <View style={styles.locationButtons}>
           <TouchableOpacity
             style={[styles.locationBtn, locationMode === "gps" && styles.locationBtnActive]}
@@ -334,23 +357,27 @@ export default function NewReportScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.locationBtn, locationMode === "map" && styles.locationBtnActive]}
-            onPress={openMapPicker}
-          >
-            <Text style={[styles.locationBtnText, locationMode === "map" && styles.locationBtnTextActive]}>
-              🗺️ Escolher no mapa
-            </Text>
-          </TouchableOpacity>
+          {residentOfCantanhede && (
+            <>
+              <TouchableOpacity
+                style={[styles.locationBtn, locationMode === "map" && styles.locationBtnActive]}
+                onPress={openMapPicker}
+              >
+                <Text style={[styles.locationBtnText, locationMode === "map" && styles.locationBtnTextActive]}>
+                  🗺️ Escolher no mapa
+                </Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.locationBtn, locationMode === "manual" && styles.locationBtnActive]}
-            onPress={selectManual}
-          >
-            <Text style={[styles.locationBtnText, locationMode === "manual" && styles.locationBtnTextActive]}>
-              ✏️ Escrever morada
-            </Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.locationBtn, locationMode === "manual" && styles.locationBtnActive]}
+                onPress={selectManual}
+              >
+                <Text style={[styles.locationBtnText, locationMode === "manual" && styles.locationBtnTextActive]}>
+                  ✏️ Escrever morada
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {(locationMode === "gps" || locationMode === "map") && location?.address && (
@@ -460,6 +487,7 @@ export default function NewReportScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 12, paddingBottom: 40, backgroundColor: "#f5f5f5" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 26, fontWeight: "700", color: "#111", marginBottom: 4 },
   input: {
     borderWidth: 1,
@@ -473,6 +501,16 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 120 },
   label: { fontSize: 14, fontWeight: "600", color: "#444", marginTop: 4 },
   locationNote: { fontSize: 12, color: "#888", marginTop: -4 },
+  locationRestriction: {
+    fontSize: 12,
+    color: "#F57C00",
+    lineHeight: 18,
+    backgroundColor: "#FFF3E0",
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FFE0B2",
+  },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   categoryBtn: {
     paddingVertical: 8,
