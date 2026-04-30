@@ -3,9 +3,9 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
@@ -30,7 +30,6 @@ export type Report = {
   category: ReportCategory;
   status: ReportStatus;
   userId: string;
-  userName?: string;
   createdAt?: any;
   updatedAt?: any;
   imageUrl?: string | null;
@@ -92,24 +91,27 @@ export async function getMyReports(): Promise<Report[]> {
 }
 
 // Para o mapa — exclui resolvidas e rejeitadas, máximo 50
-export async function getAllReports(): Promise<Report[]> {
+// Para o mapa — por defeito exclui resolvidas/rejeitadas
+// Com admin=true devolve todas para o painel admin
+export async function getAllReports(admin = false): Promise<Report[]> {
   const q = query(
     collection(db, "reports"),
     orderBy("createdAt", "desc"),
-    limit(50)
+    limit(admin ? 200 : 50)
   );
 
   const snap = await getDocs(q);
+  const all = snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Report, "id">),
+  }));
 
-  return snap.docs
-    .map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<Report, "id">),
-    }))
-    .filter((r) => r.status !== "resolved" && r.status !== "rejected");
+  if (admin) return all;
+  return all.filter((r) => r.status !== "resolved" && r.status !== "rejected");
 }
 
-// Para o painel de admin — só pendentes e em revisão
+
+// Para o painel de admin
 export async function getPendingReports(): Promise<Report[]> {
   const q = query(
     collection(db, "reports"),
@@ -121,42 +123,6 @@ export async function getPendingReports(): Promise<Report[]> {
   return snap.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<Report, "id">),
-  }));
-}
-
-// Para o painel de admin — TODAS as ocorrências com nome do utilizador
-export async function getAllReportsAdmin(): Promise<Report[]> {
-  const q = query(
-    collection(db, "reports"),
-    orderBy("createdAt", "desc")
-  );
-
-  const snap = await getDocs(q);
-  const reports = snap.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<Report, "id">),
-  }));
-
-  // Buscar nomes dos utilizadores
-  const userIds = [...new Set(reports.map((r) => r.userId))];
-  const userNames: Record<string, string> = {};
-
-  await Promise.all(
-    userIds.map(async (uid) => {
-      try {
-        const userSnap = await getDoc(doc(db, "users", uid));
-        if (userSnap.exists()) {
-          userNames[uid] = userSnap.data().name ?? "Utilizador";
-        }
-      } catch {
-        userNames[uid] = "Utilizador";
-      }
-    })
-  );
-
-  return reports.map((r) => ({
-    ...r,
-    userName: userNames[r.userId] ?? "Utilizador",
   }));
 }
 
@@ -179,4 +145,44 @@ export async function setInReview(reportId: string): Promise<void> {
     status: "in_review" as ReportStatus,
     updatedAt: serverTimestamp(),
   });
+}
+
+// Listener em tempo real das ocorrências do utilizador
+// Dispara callback quando alguma muda de estado
+export function listenToMyReports(
+  userId: string,
+  onStatusChange: (report: Report, oldStatus: ReportStatus) => void
+): () => void {
+  const q = query(
+    collection(db, "reports"),
+    where("userId", "==", userId),
+    orderBy("createdAt", "desc")
+  );
+
+  const statusCache: Record<string, ReportStatus> = {};
+
+  const unsub = onSnapshot(q, (snap) => {
+    snap.docChanges().forEach((change) => {
+      if (change.type === "modified") {
+        const report = {
+          id: change.doc.id,
+          ...(change.doc.data() as Omit<Report, "id">),
+        };
+        const oldStatus = statusCache[report.id];
+        if (oldStatus && oldStatus !== report.status) {
+          onStatusChange(report, oldStatus);
+        }
+        statusCache[report.id] = report.status;
+      }
+      if (change.type === "added") {
+        const report = {
+          id: change.doc.id,
+          ...(change.doc.data() as Omit<Report, "id">),
+        };
+        statusCache[report.id] = report.status;
+      }
+    });
+  });
+
+  return unsub;
 }

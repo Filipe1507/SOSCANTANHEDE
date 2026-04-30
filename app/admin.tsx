@@ -1,4 +1,4 @@
-import { getAllReportsAdmin, rejectReport, Report, resolveReport, setInReview } from "@/lib/reports";
+import { getAllReports, rejectReport, Report, resolveReport, setInReview } from "@/lib/reports";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -48,7 +48,8 @@ export default function AdminScreen() {
 
   async function loadReports() {
     try {
-      const data = await getAllReportsAdmin();
+      // getAllReports sem filtro de status para o admin ver tudo
+      const data = await getAllReports(true);
       setReports(data);
     } catch {
       Alert.alert("Erro", "Não foi possível carregar as ocorrências.");
@@ -68,7 +69,6 @@ export default function AdminScreen() {
     return statusOk && categoryOk;
   });
 
-  // Estatísticas
   const stats = {
     total: reports.length,
     pending: reports.filter((r) => r.status === "pending").length,
@@ -78,17 +78,31 @@ export default function AdminScreen() {
   };
 
   async function handleSetInReview(report: Report) {
-    setActioning(report.id);
-    try {
-      await setInReview(report.id);
-      setReports((prev) =>
-        prev.map((r) => (r.id === report.id ? { ...r, status: "in_review" } : r))
-      );
-    } catch {
-      Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
-    } finally {
-      setActioning(null);
-    }
+    Alert.alert(
+      "Marcar como em análise",
+      `Confirmas que estás a analisar "${report.title}"?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Confirmar",
+          onPress: async () => {
+            setActioning(report.id);
+            try {
+              await setInReview(report.id);
+              setReports((prev) =>
+                prev.map((r) =>
+                  r.id === report.id ? { ...r, status: "in_review" } : r
+                )
+              );
+            } catch {
+              Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
+            } finally {
+              setActioning(null);
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function handleResolve(report: Report) {
@@ -104,7 +118,9 @@ export default function AdminScreen() {
             try {
               await resolveReport(report.id);
               setReports((prev) =>
-                prev.map((r) => (r.id === report.id ? { ...r, status: "resolved" } : r))
+                prev.map((r) =>
+                  r.id === report.id ? { ...r, status: "resolved" } : r
+                )
               );
             } catch {
               Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
@@ -131,7 +147,9 @@ export default function AdminScreen() {
             try {
               await rejectReport(report.id);
               setReports((prev) =>
-                prev.map((r) => (r.id === report.id ? { ...r, status: "rejected" } : r))
+                prev.map((r) =>
+                  r.id === report.id ? { ...r, status: "rejected" } : r
+                )
               );
             } catch {
               Alert.alert("Erro", "Não foi possível rejeitar a ocorrência.");
@@ -166,7 +184,6 @@ export default function AdminScreen() {
         />
       }
     >
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Painel Admin</Text>
       </View>
@@ -208,14 +225,14 @@ export default function AdminScreen() {
 
       {/* Filtro por categoria */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-        {(["all", "infraestrutura", "iluminacao", "residuos", "transito", "ambiente", "outro"] as string[]).map((c) => (
+        {(["all", "infraestrutura", "iluminacao", "residuos", "transito", "ambiente", "outro"]).map((c) => (
           <TouchableOpacity
             key={c}
             style={[styles.filterChip, filterCategory === c && styles.filterChipActive]}
             onPress={() => setFilterCategory(c)}
           >
             <Text style={[styles.filterChipText, filterCategory === c && styles.filterChipTextActive]}>
-              {c === "all" ? "Todas categorias" : CATEGORY_LABELS[c]}
+              {c === "all" ? "Todas" : CATEGORY_LABELS[c]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -225,7 +242,6 @@ export default function AdminScreen() {
         {filtered.length} ocorrência{filtered.length !== 1 ? "s" : ""}
       </Text>
 
-      {/* Lista */}
       {filtered.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>🎉</Text>
@@ -238,12 +254,7 @@ export default function AdminScreen() {
               <Text style={styles.cardCategory}>
                 {CATEGORY_LABELS[report.category] ?? report.category}
               </Text>
-              <View
-                style={[
-                  styles.statusBadge,
-                  { backgroundColor: STATUS_COLORS[report.status] ?? "#999" },
-                ]}
-              >
+              <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[report.status] ?? "#999" }]}>
                 <Text style={styles.statusText}>
                   {STATUS_LABELS[report.status] ?? report.status}
                 </Text>
@@ -257,15 +268,11 @@ export default function AdminScreen() {
               <Text style={styles.cardLocation}>📍 {report.location.address}</Text>
             )}
 
-            {report.userName && (
-              <Text style={styles.cardUser}>👤 {report.userName}</Text>
-            )}
-
             {report.createdAt?.toDate && (
               <Text style={styles.cardDate}>
                 🕐 {report.createdAt.toDate().toLocaleDateString("pt-PT", {
                   day: "2-digit", month: "2-digit", year: "numeric",
-                  hour: "2-digit", minute: "2-digit"
+                  hour: "2-digit", minute: "2-digit",
                 })}
               </Text>
             )}
@@ -278,18 +285,19 @@ export default function AdminScreen() {
               />
             )}
 
-            {/* Ações — só para pendentes e em análise */}
             {(report.status === "pending" || report.status === "in_review") && (
               <View style={styles.cardActions}>
-                {report.status === "pending" && (
-                  <TouchableOpacity
-                    style={[styles.reviewBtn, actioning === report.id && styles.btnDisabled]}
-                    onPress={() => handleSetInReview(report)}
-                    disabled={actioning === report.id}
-                  >
-                    <Text style={styles.reviewBtnText}>🔍 Em análise</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={[
+                    styles.reviewBtn,
+                    report.status === "in_review" && styles.btnDisabled,
+                    actioning === report.id && styles.btnDisabled,
+                  ]}
+                  onPress={() => handleSetInReview(report)}
+                  disabled={actioning === report.id || report.status === "in_review"}
+                >
+                  <Text style={styles.reviewBtnText}>Em análise</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={[styles.rejectBtn, actioning === report.id && styles.btnDisabled]}
@@ -336,10 +344,7 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 15, color: "#555" },
   header: { gap: 4 },
   title: { fontSize: 24, fontWeight: "700", color: "#111" },
-  statsRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
+  statsRow: { flexDirection: "row", gap: 8 },
   statBox: {
     flex: 1,
     backgroundColor: "#fff",
@@ -366,10 +371,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ddd",
   },
-  filterChipActive: {
-    backgroundColor: "#2196F3",
-    borderColor: "#2196F3",
-  },
+  filterChipActive: { backgroundColor: "#2196F3", borderColor: "#2196F3" },
   filterChipText: { fontSize: 13, color: "#555" },
   filterChipTextActive: { color: "#fff", fontWeight: "600" },
   resultsText: { fontSize: 13, color: "#888" },
@@ -398,7 +400,6 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
   cardDescription: { fontSize: 14, color: "#444", lineHeight: 20 },
   cardLocation: { fontSize: 12, color: "#777" },
-  cardUser: { fontSize: 12, color: "#555", fontWeight: "500" },
   cardDate: { fontSize: 12, color: "#999" },
   cardImage: { width: "100%", height: 180, borderRadius: 8, marginTop: 4 },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 4 },
@@ -406,10 +407,11 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: "#1976D2",
+    borderWidth: 1,
+    borderColor: "#1976D2",
     alignItems: "center",
   },
-  reviewBtnText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  reviewBtnText: { fontSize: 13, fontWeight: "600", color: "#1976D2" },
   rejectBtn: {
     flex: 1,
     padding: 12,
