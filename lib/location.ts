@@ -1,47 +1,22 @@
-type Point = { lat: number; lng: number };
-
-const CANTANHEDE_POLYGON: Point[] = [
-  { lat: 40.4800, lng: -8.7200 },
-  { lat: 40.4900, lng: -8.6200 },
-  { lat: 40.4700, lng: -8.5200 },
-  { lat: 40.4200, lng: -8.4500 },
-  { lat: 40.3500, lng: -8.4400 },
-  { lat: 40.2800, lng: -8.4800 },
-  { lat: 40.2600, lng: -8.5600 },
-  { lat: 40.2900, lng: -8.6500 },
-  { lat: 40.3500, lng: -8.7100 },
-  { lat: 40.4200, lng: -8.7400 },
-  { lat: 40.4800, lng: -8.7200 },
-];
-
-function isPointInPolygon(point: Point, polygon: Point[]): boolean {
-  const { lat: y, lng: x } = point;
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].lng;
-    const yi = polygon[i].lat;
-    const xj = polygon[j].lng;
-    const yj = polygon[j].lat;
-
-    const intersect =
-      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-
-    if (intersect) inside = !inside;
+export async function isInCantanhede(lat: number, lng: number): Promise<boolean> {
+  try {
+    const url = "https://nominatim.openstreetmap.org/reverse?lat=" + lat + "&lon=" + lng + "&format=json&accept-language=pt";
+    const response = await fetch(url);
+    const data = await response.json();
+    const address = data?.address ?? {};
+    const city = (address.city ?? "").toLowerCase();
+    const cityDistrict = (address.city_district ?? "").toLowerCase();
+    const municipality = (address.municipality ?? "").toLowerCase();
+    return (
+      city.includes("cantanhede") ||
+      cityDistrict.includes("cantanhede") ||
+      municipality.includes("cantanhede")
+    );
+  } catch {
+    return false;
   }
-
-  return inside;
 }
 
-export function isInCantanhede(lat: number, lng: number): boolean {
-  return isPointInPolygon({ lat, lng }, CANTANHEDE_POLYGON);
-}
-
-/**
- * Valida uma morada escrita manualmente.
- * Faz geocoding via Nominatim e verifica se está no concelho de Cantanhede.
- * Devolve as coordenadas se válida, ou null se fora do concelho ou não encontrada.
- */
 export async function validateManualAddress(address: string): Promise<{
   lat: number;
   lng: number;
@@ -63,7 +38,8 @@ export async function validateManualAddress(address: string): Promise<{
     const latNum = parseFloat(lat);
     const lngNum = parseFloat(lon);
 
-    if (!isInCantanhede(latNum, lngNum)) return null;
+    const valid = await isInCantanhede(latNum, lngNum);
+    if (!valid) return null;
 
     return { lat: latNum, lng: lngNum, displayAddress: display_name };
   } catch {

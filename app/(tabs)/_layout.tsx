@@ -1,4 +1,5 @@
 import { getCurrentUserName, isAdmin, logoutUser } from "@/lib/auth";
+import { auth } from "@/lib/firebase";
 import { DrawerContentScrollView, DrawerItem, DrawerItemList } from "@react-navigation/drawer";
 import { router } from "expo-router";
 import { Drawer } from "expo-router/drawer";
@@ -7,11 +8,13 @@ import { StyleSheet, Text, View } from "react-native";
 
 function CustomDrawerContent(props: any) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [admin, setAdmin] = useState(false);
 
   useEffect(() => {
     getCurrentUserName().then(setName);
     isAdmin().then(setAdmin);
+    setEmail(auth.currentUser?.email ?? "");
   }, []);
 
   return (
@@ -24,6 +27,7 @@ function CustomDrawerContent(props: any) {
           </Text>
         </View>
         <Text style={styles.drawerName}>{name || "..."}</Text>
+        <Text style={styles.drawerEmail}>{email}</Text>
       </View>
 
       {/* Itens de navegação */}
@@ -101,7 +105,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     marginBottom: 8,
     alignItems: "center",
-    gap: 10,
+    gap: 6,
   },
   avatar: {
     width: 56,
@@ -120,6 +124,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
+  },
+  drawerEmail: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.8)",
   },
   adminLabel: {
     fontSize: 14,

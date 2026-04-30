@@ -126,7 +126,7 @@ export default function NewReportScreen() {
       const loc = await Location.getCurrentPositionAsync({});
       const { latitude: lat, longitude: lng } = loc.coords;
 
-      if (!isInCantanhede(lat, lng)) {
+      if (!await isInCantanhede(lat, lng)) {
         Alert.alert("Fora do concelho", OUT_OF_BOUNDS_MESSAGE);
         return;
       }
@@ -166,7 +166,7 @@ export default function NewReportScreen() {
 
     const { latitude: lat, longitude: lng } = pinCoords;
 
-    if (!isInCantanhede(lat, lng)) {
+    if (!await isInCantanhede(lat, lng)) {
       Alert.alert("Fora do concelho", OUT_OF_BOUNDS_MESSAGE);
       return;
     }

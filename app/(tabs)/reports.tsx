@@ -1,4 +1,6 @@
+import { sendLocalNotification } from "@/lib/notifications";
 import { getMyReports, Report } from "@/lib/reports";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -25,6 +27,12 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: "Rejeitada",
 };
 
+const STATUS_MESSAGES: Record<string, string> = {
+  in_review: "está agora em análise.",
+  resolved: "foi resolvida! Obrigado pelo reporte.",
+  rejected: "foi rejeitada.",
+};
+
 const CATEGORY_LABELS: Record<string, string> = {
   infraestrutura: "🏗️ Infraestrutura",
   iluminacao: "💡 Iluminação",
@@ -34,6 +42,33 @@ const CATEGORY_LABELS: Record<string, string> = {
   outro: "❓ Outro",
 };
 
+async function checkForStatusChanges(reports: Report[]) {
+  try {
+    const stored = await AsyncStorage.getItem("report_statuses");
+    const previous: Record<string, string> = stored ? JSON.parse(stored) : {};
+
+    for (const report of reports) {
+      const prevStatus = previous[report.id];
+      const currStatus = report.status;
+
+      if (prevStatus && prevStatus !== currStatus && STATUS_MESSAGES[currStatus]) {
+        await sendLocalNotification(
+          `Ocorrência: ${report.title}`,
+          `A tua ocorrência "${report.title}" ${STATUS_MESSAGES[currStatus]}`
+        );
+      }
+    }
+
+    const newStatuses: Record<string, string> = {};
+    for (const report of reports) {
+      newStatuses[report.id] = report.status;
+    }
+    await AsyncStorage.setItem("report_statuses", JSON.stringify(newStatuses));
+  } catch {
+    // ignora erros de storage
+  }
+}
+
 export default function ReportsScreen() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +77,7 @@ export default function ReportsScreen() {
   async function load() {
     try {
       const data = await getMyReports();
+      await checkForStatusChanges(data);
       setReports(data);
     } finally {
       setLoading(false);

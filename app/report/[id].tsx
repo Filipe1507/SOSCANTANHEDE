@@ -2,13 +2,13 @@ import { getMyReports, Report } from "@/lib/reports";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -119,21 +119,39 @@ export default function ReportDetailScreen() {
         </View>
       )}
 
-      {/* Data */}
-      {report.createdAt?.toDate && (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Submetida em</Text>
-          <Text style={styles.sectionText}>
-            {report.createdAt.toDate().toLocaleDateString("pt-PT", {
-              day: "2-digit",
-              month: "long",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
-        </View>
-      )}
+      {/* Datas */}
+      <View style={styles.section}>
+        {report.createdAt?.toDate && (
+          <>
+            <Text style={styles.sectionLabel}>Submetida em</Text>
+            <Text style={styles.sectionText}>
+              {report.createdAt.toDate().toLocaleDateString("pt-PT", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Text>
+          </>
+        )}
+
+        {report.updatedAt?.toDate &&
+          report.updatedAt.toDate().getTime() !== report.createdAt?.toDate?.()?.getTime() && (
+          <>
+            <Text style={[styles.sectionLabel, { marginTop: 8 }]}>Última atualização</Text>
+            <Text style={styles.sectionText}>
+              {report.updatedAt.toDate().toLocaleDateString("pt-PT", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Text>
+          </>
+        )}
+      </View>
 
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
         <Text style={styles.backBtnText}>← Voltar às minhas ocorrências</Text>
