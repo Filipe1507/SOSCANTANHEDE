@@ -24,8 +24,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
   in_review: "Em análise",
-  resolved: "Resolvida",
-  rejected: "Rejeitada",
+  
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -35,20 +34,43 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: "#D32F2F",
 };
 
+const DAYS_UNTIL_HISTORY = 7;
+
+type Tab = "active" | "history";
 type FilterStatus = "all" | "pending" | "in_review" | "resolved" | "rejected";
-type FilterCategory = "all" | string;
+
+function isOlderThan(report: Report, days: number): boolean {
+  if (!report.updatedAt?.toDate) return false;
+  const updated = report.updatedAt.toDate();
+  const diff = (Date.now() - updated.getTime()) / (1000 * 60 * 60 * 24);
+  return diff >= days;
+}
+
+function formatDate(report: Report): string {
+  if (!report.createdAt?.toDate) return "";
+  return report.createdAt.toDate().toLocaleDateString("pt-PT", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function daysUntilHistory(report: Report): number {
+  if (!report.updatedAt?.toDate) return DAYS_UNTIL_HISTORY;
+  const updated = report.updatedAt.toDate();
+  const diff = (Date.now() - updated.getTime()) / (1000 * 60 * 60 * 24);
+  return Math.max(0, Math.ceil(DAYS_UNTIL_HISTORY - diff));
+}
 
 export default function AdminScreen() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("active");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
-  const [filterCategory, setFilterCategory] = useState<FilterCategory>("all");
 
   async function loadReports() {
     try {
-      // getAllReports sem filtro de status para o admin ver tudo
       const data = await getAllReports(true);
       setReports(data);
     } catch {
@@ -63,16 +85,38 @@ export default function AdminScreen() {
     loadReports();
   }, []);
 
-  const filtered = reports.filter((r) => {
-    const statusOk = filterStatus === "all" || r.status === filterStatus;
-    const categoryOk = filterCategory === "all" || r.category === filterCategory;
-    return statusOk && categoryOk;
+  // Ativas — pendentes e em análise (independente do tempo)
+  const activeReports = reports.filter(
+    (r) => r.status === "pending" || r.status === "in_review"
+  );
+
+  // Histórico — resolvidas ou rejeitadas com mais de 7 dias
+  const historyReports = reports.filter(
+    (r) =>
+      (r.status === "resolved" || r.status === "rejected") &&
+      isOlderThan(r, DAYS_UNTIL_HISTORY)
+  );
+
+  // Recentes — resolvidas/rejeitadas ainda dentro dos 7 dias
+  // Aparecem nas ativas para o admin ver o que foi tratado recentemente
+  const recentlyClosed = reports.filter(
+    (r) =>
+      (r.status === "resolved" || r.status === "rejected") &&
+      !isOlderThan(r, DAYS_UNTIL_HISTORY)
+  );
+
+  const currentList = tab === "active"
+    ? [...activeReports, ...recentlyClosed]
+    : historyReports;
+
+  const filtered = currentList.filter((r) => {
+    if (filterStatus === "all") return true;
+    return r.status === filterStatus;
   });
 
   const stats = {
-    total: reports.length,
-    pending: reports.filter((r) => r.status === "pending").length,
-    in_review: reports.filter((r) => r.status === "in_review").length,
+    pending: activeReports.filter((r) => r.status === "pending").length,
+    in_review: activeReports.filter((r) => r.status === "in_review").length,
     resolved: reports.filter((r) => r.status === "resolved").length,
     rejected: reports.filter((r) => r.status === "rejected").length,
   };
@@ -90,9 +134,7 @@ export default function AdminScreen() {
             try {
               await setInReview(report.id);
               setReports((prev) =>
-                prev.map((r) =>
-                  r.id === report.id ? { ...r, status: "in_review" } : r
-                )
+                prev.map((r) => r.id === report.id ? { ...r, status: "in_review" } : r)
               );
             } catch {
               Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
@@ -118,9 +160,7 @@ export default function AdminScreen() {
             try {
               await resolveReport(report.id);
               setReports((prev) =>
-                prev.map((r) =>
-                  r.id === report.id ? { ...r, status: "resolved" } : r
-                )
+                prev.map((r) => r.id === report.id ? { ...r, status: "resolved", updatedAt: { toDate: () => new Date() } } : r)
               );
             } catch {
               Alert.alert("Erro", "Não foi possível atualizar a ocorrência.");
@@ -147,9 +187,7 @@ export default function AdminScreen() {
             try {
               await rejectReport(report.id);
               setReports((prev) =>
-                prev.map((r) =>
-                  r.id === report.id ? { ...r, status: "rejected" } : r
-                )
+                prev.map((r) => r.id === report.id ? { ...r, status: "rejected", updatedAt: { toDate: () => new Date() } } : r)
               );
             } catch {
               Alert.alert("Erro", "Não foi possível rejeitar a ocorrência.");
@@ -177,23 +215,15 @@ export default function AdminScreen() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => {
-            setRefreshing(true);
-            loadReports();
-          }}
+          onRefresh={() => { setRefreshing(true); loadReports(); }}
         />
       }
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>Painel Admin</Text>
-      </View>
+      {/* Header */}
+      <Text style={styles.title}>Painel Admin</Text>
 
       {/* Estatísticas */}
       <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{stats.total}</Text>
-          <Text style={styles.statLabel}>Total</Text>
-        </View>
         <View style={[styles.statBox, { borderTopColor: "#FFA000" }]}>
           <Text style={styles.statNumber}>{stats.pending}</Text>
           <Text style={styles.statLabel}>Pendentes</Text>
@@ -206,122 +236,160 @@ export default function AdminScreen() {
           <Text style={styles.statNumber}>{stats.resolved}</Text>
           <Text style={styles.statLabel}>Resolvidas</Text>
         </View>
+        <View style={[styles.statBox, { borderTopColor: "#D32F2F" }]}>
+          <Text style={styles.statNumber}>{stats.rejected}</Text>
+          <Text style={styles.statLabel}>Rejeitadas</Text>
+        </View>
+      </View>
+
+      {/* Abas */}
+      <View style={styles.tabRow}>
+        <TouchableOpacity
+          style={[styles.tab, tab === "active" && styles.tabActive]}
+          onPress={() => { setTab("active"); setFilterStatus("all"); }}
+        >
+          <Text style={[styles.tabText, tab === "active" && styles.tabTextActive]}>
+            Ativas
+            {activeReports.length > 0 && (
+              <Text style={styles.tabBadge}> {activeReports.length}</Text>
+            )}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, tab === "history" && styles.tabActive]}
+          onPress={() => { setTab("history"); setFilterStatus("all"); }}
+        >
+          <Text style={[styles.tabText, tab === "history" && styles.tabTextActive]}>
+            Histórico
+            {historyReports.length > 0 && (
+              <Text style={styles.tabBadge}> {historyReports.length}</Text>
+            )}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Filtro por estado */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-        {(["all", "pending", "in_review", "resolved", "rejected"] as FilterStatus[]).map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.filterChip, filterStatus === s && styles.filterChipActive]}
-            onPress={() => setFilterStatus(s)}
-          >
-            <Text style={[styles.filterChipText, filterStatus === s && styles.filterChipTextActive]}>
-              {s === "all" ? "Todos" : STATUS_LABELS[s]}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Filtro por categoria */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-        {(["all", "infraestrutura", "iluminacao", "residuos", "transito", "ambiente", "outro"]).map((c) => (
-          <TouchableOpacity
-            key={c}
-            style={[styles.filterChip, filterCategory === c && styles.filterChipActive]}
-            onPress={() => setFilterCategory(c)}
-          >
-            <Text style={[styles.filterChipText, filterCategory === c && styles.filterChipTextActive]}>
-              {c === "all" ? "Todas" : CATEGORY_LABELS[c]}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+  {(tab === "active"
+    ? ["all", "pending", "in_review"]
+    : ["all", "resolved", "rejected"]
+  ).map((s) => (
+    <TouchableOpacity
+      key={s}
+      style={[styles.filterChip, filterStatus === s && styles.filterChipActive]}
+      onPress={() => setFilterStatus(s as FilterStatus)}
+    >
+      <Text style={[styles.filterChipText, filterStatus === s && styles.filterChipTextActive]}>
+        {s === "all" ? "Todos" : s === "pending" ? "Pendente" : s === "in_review" ? "Em análise" : s === "resolved" ? "Resolvida" : "Rejeitada"}
+      </Text>
+    </TouchableOpacity>
+  ))}
+</ScrollView>
 
       <Text style={styles.resultsText}>
         {filtered.length} ocorrência{filtered.length !== 1 ? "s" : ""}
+        {tab === "history" && ` · arquivadas há mais de ${DAYS_UNTIL_HISTORY} dias`}
       </Text>
 
+      {/* Lista */}
       {filtered.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>🎉</Text>
-          <Text style={styles.emptyText}>Nenhuma ocorrência encontrada.</Text>
+          <Text style={styles.emptyEmoji}>{tab === "active" ? "🎉" : "📂"}</Text>
+          <Text style={styles.emptyText}>
+            {tab === "active"
+              ? "Nenhuma ocorrência ativa."
+              : `Nenhuma ocorrência no histórico.\nAs ocorrências resolvidas/rejeitadas aparecem aqui após ${DAYS_UNTIL_HISTORY} dias.`}
+          </Text>
         </View>
       ) : (
-        filtered.map((report) => (
-          <View key={report.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardCategory}>
-                {CATEGORY_LABELS[report.category] ?? report.category}
-              </Text>
-              <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[report.status] ?? "#999" }]}>
-                <Text style={styles.statusText}>
-                  {STATUS_LABELS[report.status] ?? report.status}
+        filtered.map((report) => {
+          const isActive = report.status === "pending" || report.status === "in_review";
+          const isRecentlyClosed = (report.status === "resolved" || report.status === "rejected")
+            && !isOlderThan(report, DAYS_UNTIL_HISTORY);
+          const remaining = isRecentlyClosed ? daysUntilHistory(report) : 0;
+
+          return (
+            <View key={report.id} style={[
+              styles.card,
+              tab === "history" && styles.cardHistory,
+            ]}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardCategory}>
+                  {CATEGORY_LABELS[report.category] ?? report.category}
                 </Text>
+                <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[report.status] ?? "#999" }]}>
+                  <Text style={styles.statusText}>
+                    {STATUS_LABELS[report.status] ?? report.status}
+                  </Text>
+                </View>
               </View>
+
+              <Text style={styles.cardTitle}>{report.title}</Text>
+              <Text style={styles.cardDescription}>{report.description}</Text>
+
+              {report.location?.address && (
+                <Text style={styles.cardLocation}>📍 {report.location.address}</Text>
+              )}
+
+              {report.createdAt?.toDate && (
+                <Text style={styles.cardDate}>🕐 {formatDate(report)}</Text>
+              )}
+
+              {/* Aviso de dias restantes antes de ir para histórico */}
+              {isRecentlyClosed && remaining > 0 && (
+                <View style={styles.archiveBadge}>
+                  <Text style={styles.archiveBadgeText}>
+                    📦 Vai para histórico em {remaining} dia{remaining !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+              )}
+
+              {report.imageUrl && (
+                <Image
+                  source={{ uri: report.imageUrl }}
+                  style={styles.cardImage}
+                  resizeMode="cover"
+                />
+              )}
+
+              {/* Ações — só para pendentes e em análise */}
+              {isActive && (
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.reviewBtn,
+                      (report.status === "in_review" || actioning === report.id) && styles.btnDisabled,
+                    ]}
+                    onPress={() => handleSetInReview(report)}
+                    disabled={actioning === report.id || report.status === "in_review"}
+                  >
+                    <Text style={styles.reviewBtnText}>Em análise</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.rejectBtn, actioning === report.id && styles.btnDisabled]}
+                    onPress={() => handleReject(report)}
+                    disabled={actioning === report.id}
+                  >
+                    <Text style={styles.rejectBtnText}>✕ Rejeitar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.resolveBtn, actioning === report.id && styles.btnDisabled]}
+                    onPress={() => handleResolve(report)}
+                    disabled={actioning === report.id}
+                  >
+                    {actioning === report.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.resolveBtnText}>✓ Concluído</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
-
-            <Text style={styles.cardTitle}>{report.title}</Text>
-            <Text style={styles.cardDescription}>{report.description}</Text>
-
-            {report.location?.address && (
-              <Text style={styles.cardLocation}>📍 {report.location.address}</Text>
-            )}
-
-            {report.createdAt?.toDate && (
-              <Text style={styles.cardDate}>
-                🕐 {report.createdAt.toDate().toLocaleDateString("pt-PT", {
-                  day: "2-digit", month: "2-digit", year: "numeric",
-                  hour: "2-digit", minute: "2-digit",
-                })}
-              </Text>
-            )}
-
-            {report.imageUrl && (
-              <Image
-                source={{ uri: report.imageUrl }}
-                style={styles.cardImage}
-                resizeMode="cover"
-              />
-            )}
-
-            {(report.status === "pending" || report.status === "in_review") && (
-              <View style={styles.cardActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.reviewBtn,
-                    report.status === "in_review" && styles.btnDisabled,
-                    actioning === report.id && styles.btnDisabled,
-                  ]}
-                  onPress={() => handleSetInReview(report)}
-                  disabled={actioning === report.id || report.status === "in_review"}
-                >
-                  <Text style={styles.reviewBtnText}>Em análise</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.rejectBtn, actioning === report.id && styles.btnDisabled]}
-                  onPress={() => handleReject(report)}
-                  disabled={actioning === report.id}
-                >
-                  <Text style={styles.rejectBtnText}>✕ Rejeitar</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.resolveBtn, actioning === report.id && styles.btnDisabled]}
-                  onPress={() => handleResolve(report)}
-                  disabled={actioning === report.id}
-                >
-                  {actioning === report.id ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.resolveBtnText}>✓ Concluído</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        ))
+          );
+        })
       )}
     </ScrollView>
   );
@@ -330,7 +398,7 @@ export default function AdminScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    gap: 16,
+    gap: 12,
     paddingBottom: 40,
     backgroundColor: "#f5f5f5",
   },
@@ -342,7 +410,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
   },
   loadingText: { fontSize: 15, color: "#555" },
-  header: { gap: 4 },
   title: { fontSize: 24, fontWeight: "700", color: "#111" },
   statsRow: { flexDirection: "row", gap: 8 },
   statBox: {
@@ -361,7 +428,34 @@ const styles = StyleSheet.create({
   },
   statNumber: { fontSize: 20, fontWeight: "700", color: "#111" },
   statLabel: { fontSize: 11, color: "#666", marginTop: 2 },
-  filterRow: { flexGrow: 0, marginBottom: 4 },
+
+  // Abas
+  tabRow: {
+    flexDirection: "row",
+    backgroundColor: "#e0e0e0",
+    borderRadius: 12,
+    padding: 3,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 10,
+  },
+  tabActive: {
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  tabText: { fontSize: 14, fontWeight: "500", color: "#888" },
+  tabTextActive: { color: "#111", fontWeight: "700" },
+  tabBadge: { fontSize: 13, color: "#2196F3", fontWeight: "700" },
+
+  // Filtros
+  filterRow: { flexGrow: 0 },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -374,10 +468,12 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: "#2196F3", borderColor: "#2196F3" },
   filterChipText: { fontSize: 13, color: "#555" },
   filterChipTextActive: { color: "#fff", fontWeight: "600" },
-  resultsText: { fontSize: 13, color: "#888" },
+  resultsText: { fontSize: 12, color: "#999" },
+
+  // Cards
   emptyContainer: { alignItems: "center", paddingTop: 40, gap: 12 },
   emptyEmoji: { fontSize: 48 },
-  emptyText: { fontSize: 16, color: "#555", textAlign: "center" },
+  emptyText: { fontSize: 15, color: "#555", textAlign: "center", lineHeight: 22 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 14,
@@ -388,6 +484,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
+  },
+  cardHistory: {
+    opacity: 0.85,
+    borderLeftWidth: 3,
+    borderLeftColor: "#ccc",
   },
   cardHeader: {
     flexDirection: "row",
@@ -401,32 +502,30 @@ const styles = StyleSheet.create({
   cardDescription: { fontSize: 14, color: "#444", lineHeight: 20 },
   cardLocation: { fontSize: 12, color: "#777" },
   cardDate: { fontSize: 12, color: "#999" },
+  archiveBadge: {
+    backgroundColor: "#FFF8E1",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#FFE082",
+  },
+  archiveBadgeText: { fontSize: 12, color: "#F57F17", fontWeight: "500" },
   cardImage: { width: "100%", height: 180, borderRadius: 8, marginTop: 4 },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 4 },
   reviewBtn: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#1976D2",
-    alignItems: "center",
+    flex: 1, padding: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: "#1976D2", alignItems: "center",
   },
   reviewBtnText: { fontSize: 13, fontWeight: "600", color: "#1976D2" },
   rejectBtn: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D32F2F",
-    alignItems: "center",
+    flex: 1, padding: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: "#D32F2F", alignItems: "center",
   },
   rejectBtnText: { fontSize: 13, fontWeight: "600", color: "#D32F2F" },
   resolveBtn: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#388E3C",
-    alignItems: "center",
+    flex: 1, padding: 12, borderRadius: 10,
+    backgroundColor: "#388E3C", alignItems: "center",
   },
   resolveBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   btnDisabled: { opacity: 0.5 },
