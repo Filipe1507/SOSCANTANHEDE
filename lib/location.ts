@@ -1,20 +1,41 @@
-export async function isInCantanhede(lat: number, lng: number): Promise<boolean> {
-  try {
-    const url = "https://nominatim.openstreetmap.org/reverse?lat=" + lat + "&lon=" + lng + "&format=json&accept-language=pt";
-    const response = await fetch(url);
-    const data = await response.json();
-    const address = data?.address ?? {};
-    const city = (address.city ?? "").toLowerCase();
-    const cityDistrict = (address.city_district ?? "").toLowerCase();
-    const municipality = (address.municipality ?? "").toLowerCase();
-    return (
-      city.includes("cantanhede") ||
-      cityDistrict.includes("cantanhede") ||
-      municipality.includes("cantanhede")
-    );
-  } catch {
-    return false;
+type Point = { lat: number; lng: number };
+
+const CANTANHEDE_POLYGON: Point[] = [
+  { lat: 40.4900, lng: -8.6800 },
+  { lat: 40.4900, lng: -8.5800 },
+  { lat: 40.4500, lng: -8.4600 },
+  { lat: 40.3800, lng: -8.4300 },
+  { lat: 40.3000, lng: -8.4600 },
+  { lat: 40.2500, lng: -8.5000 },
+  { lat: 40.2300, lng: -8.5800 },
+  { lat: 40.2500, lng: -8.6800 },
+  { lat: 40.2900, lng: -8.7500 },
+  { lat: 40.3500, lng: -8.7600 },
+  { lat: 40.4200, lng: -8.7500 },
+  { lat: 40.4900, lng: -8.6800 },
+];
+
+function isPointInPolygon(point: Point, polygon: Point[]): boolean {
+  const { lat: y, lng: x } = point;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].lng;
+    const yi = polygon[i].lat;
+    const xj = polygon[j].lng;
+    const yj = polygon[j].lat;
+
+    const intersect =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+
+    if (intersect) inside = !inside;
   }
+
+  return inside;
+}
+
+export async function isInCantanhede(lat: number, lng: number): Promise<boolean> {
+  return isPointInPolygon({ lat, lng }, CANTANHEDE_POLYGON);
 }
 
 export async function validateManualAddress(address: string): Promise<{
@@ -23,26 +44,46 @@ export async function validateManualAddress(address: string): Promise<{
   displayAddress: string;
 } | null> {
   try {
+    const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+
+    if (!GOOGLE_KEY) {
+      console.warn("Google Maps key não configurada");
+      return null;
+    }
+
     const query = encodeURIComponent(address + ", Cantanhede, Portugal");
     const url =
-      "https://nominatim.openstreetmap.org/search?q=" +
+      "https://maps.googleapis.com/maps/api/geocode/json?address=" +
       query +
-      "&format=json&limit=1&accept-language=pt";
+      "&key=" +
+      GOOGLE_KEY +
+      "&region=pt&language=pt";
 
     const response = await fetch(url);
-    const results = await response.json();
+    const data = await response.json();
 
-    if (!results || results.length === 0) return null;
+    if (data.status !== "OK" || !data.results || data.results.length === 0) {
+      console.log("Google Geocoding sem resultados:", data.status);
+      return null;
+    }
 
-    const { lat, lon, display_name } = results[0];
-    const latNum = parseFloat(lat);
-    const lngNum = parseFloat(lon);
+    for (const result of data.results) {
+      const { lat, lng } = result.geometry.location;
 
-    const valid = await isInCantanhede(latNum, lngNum);
-    if (!valid) return null;
+      // Verifica se está dentro do polígono do concelho
+      if (!isPointInPolygon({ lat, lng }, CANTANHEDE_POLYGON)) continue;
 
-    return { lat: latNum, lng: lngNum, displayAddress: display_name };
-  } catch {
+      return {
+        lat,
+        lng,
+        displayAddress: result.formatted_address,
+      };
+    }
+
+    // Nenhum resultado dentro do concelho
+    return null;
+  } catch (e) {
+    console.log("Erro no geocoding:", e);
     return null;
   }
 }

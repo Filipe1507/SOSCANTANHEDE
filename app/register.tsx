@@ -123,11 +123,15 @@ export default function RegisterScreen() {
               style={styles.input}
             />
             <TextInput
-              placeholder="Telemóvel"
+              placeholder="Número de telemóvel"
               placeholderTextColor="#999"
-              keyboardType="phone-pad"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(text) => {
+                // Só aceita números
+                const filtered = text.replace(/[^0-9]/g, "");
+                setPhone(filtered);
+              }}
+              keyboardType="phone-pad"
               style={styles.input}
             />
             <TextInput
@@ -166,16 +170,17 @@ export default function RegisterScreen() {
               style={styles.input}
             />
             <TextInput
-              placeholder="Código postal (ex: 3060-100)"
+              placeholder="Código Postal (ex: 3060-100)"
               placeholderTextColor="#999"
               value={postalCode}
-              onChangeText={(v) => {
-                setPostalCode(v);
-                setIsCantanhede(null);
+              onChangeText={(text) => {
+                // Só aceita números e hífen
+                const filtered = text.replace(/[^0-9-]/g, "");
+                setPostalCode(filtered);
               }}
-              onBlur={handlePostalCodeBlur}
+              keyboardType="numeric"
               style={styles.input}
-            />
+/>
 
             {checkingPostal && (
               <View style={styles.postalRow}>

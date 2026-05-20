@@ -2,16 +2,16 @@ import { changePassword, getUserProfile, updateUserProfile } from "@/lib/auth";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 function validatePassword(password: string): string | null {
@@ -134,11 +134,15 @@ export default function EditProfileScreen() {
           style={styles.input}
         />
         <TextInput
-          placeholder="Telemóvel"
+          placeholder="Número de telemóvel"
           placeholderTextColor="#999"
-          keyboardType="phone-pad"
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            // Só aceita números
+            const filtered = text.replace(/[^0-9]/g, "");
+            setPhone(filtered);
+          }}
+          keyboardType="phone-pad"
           style={styles.input}
         />
         <TextInput
@@ -149,10 +153,14 @@ export default function EditProfileScreen() {
           style={styles.input}
         />
         <TextInput
-          placeholder="Código postal (ex: 3060-100)"
+          placeholder="Código Postal (ex: 3060-100)"
           placeholderTextColor="#999"
           value={postalCode}
-          onChangeText={setPostalCode}
+          onChangeText={(text) => {
+            const filtered = text.replace(/[^0-9-]/g, "");
+            setPostalCode(filtered);
+          }}
+          keyboardType="numeric"
           style={styles.input}
         />
 
