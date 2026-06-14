@@ -47,6 +47,10 @@ export default function LoginScreen() {
   async function handleResetPassword() {
     setResetMsg("");
     const trimmed = resetEmail.trim();
+      await sendPasswordResetEmail(auth, trimmed);
+      setResetMsg(
+        `Email de recuperação enviado para ${trimmed}. A nova password deve ter pelo menos 8 caracteres.`
+      );
 
     if (!trimmed) {
       setResetMsg("Introduz o teu email.");

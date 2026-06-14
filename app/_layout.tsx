@@ -81,17 +81,21 @@ export default function RootLayout() {
   }, [ready, isAuthenticated]);
 
   if (!ready) {
-    return (
-      <View style={styles.splashContainer}>
-        <Image
-          source={require("../assets/images/splash-icon.png")}
-          style={[styles.logo, { width: width * 0.7, height: width * 0.7 }]}
-          resizeMode="contain"
-        />
-        <ActivityIndicator size="large" color="#2196F3" style={styles.spinner} />
-      </View>
-    );
-  }
+  return (
+    <View style={styles.splashContainer}>
+      <Image
+        source={require("../assets/images/splash-icon.png")}
+        style={[styles.logo, { width: width * 1.5, height: width * 1.8 }]}
+        resizeMode="contain"
+      />
+      <ActivityIndicator
+        size="small"
+        color="#2196F3"
+        style={styles.spinner}
+      />
+    </View>
+  );
+}
 
   return (
     <Stack>
@@ -108,15 +112,15 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   splashContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#fff",
-  },
-  logo: {
-    marginBottom: 32,
-  },
-  spinner: {
-    marginTop: 8,
-  },
+  flex: 1,
+  justifyContent: "center",
+  alignItems: "center",
+  backgroundColor: "#ffffff", 
+},
+logo: {
+  marginBottom: 16,
+},
+spinner: {
+  marginTop: 0,
+},
 });

@@ -1,5 +1,5 @@
 import { isResidentOfCantanhede } from "@/lib/auth";
-import { ADDRESS_NOT_FOUND_MESSAGE, isInCantanhede, OUT_OF_BOUNDS_MESSAGE, validateManualAddress } from "@/lib/location";
+import { isInCantanhede, OUT_OF_BOUNDS_MESSAGE } from "@/lib/location";
 import { createReport, ReportCategory } from "@/lib/reports";
 import { uploadImage } from "@/lib/storage";
 import * as ImagePicker from "expo-image-picker";
@@ -36,8 +36,12 @@ const CANTANHEDE: Region = {
   longitudeDelta: 0.05,
 };
 
-type LocationMode = "gps" | "map" | "manual" | null;
+type LocationMode = "gps" | "map" | null;
 type LocationData = { lat?: number; lng?: number; address?: string };
+
+function sanitizeText(text: string): string {
+  return text.replace(/[^\p{L}\p{N}\s.,;:!?()'"@#\-\/]/gu, "");
+}
 
 async function getAddressFromCoords(lat: number, lng: number): Promise<string> {
   try {
@@ -47,7 +51,6 @@ async function getAddressFromCoords(lat: number, lng: number): Promise<string> {
       "&lon=" +
       lng +
       "&format=json&accept-language=pt";
-
     const response = await fetch(url);
     const data = await response.json();
 
@@ -76,6 +79,9 @@ async function getAddressFromCoords(lat: number, lng: number): Promise<string> {
   }
 }
 
+const TITLE_MAX = 100;
+const DESCRIPTION_MAX = 500;
+
 export default function NewReportScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -83,14 +89,11 @@ export default function NewReportScreen() {
   const [customCategory, setCustomCategory] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [validatingAddress, setValidatingAddress] = useState(false);
   const [residentOfCantanhede, setResidentOfCantanhede] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [locationMode, setLocationMode] = useState<LocationMode>(null);
   const [location, setLocation] = useState<LocationData | null>(null);
-  const [manualAddress, setManualAddress] = useState("");
-  const [manualValidated, setManualValidated] = useState(false);
   const [mapVisible, setMapVisible] = useState(false);
   const [mapRegion, setMapRegion] = useState<Region>(CANTANHEDE);
   const [pinCoords, setPinCoords] = useState<{
@@ -110,8 +113,6 @@ export default function NewReportScreen() {
   const clearLocation = () => {
     setLocationMode(null);
     setLocation(null);
-    setManualAddress("");
-    setManualValidated(false);
     setPinCoords(null);
   };
 
@@ -152,9 +153,7 @@ export default function NewReportScreen() {
           longitudeDelta: 0.01,
         });
       }
-    } catch {
-      // fallback para Cantanhede
-    }
+    } catch {}
     setMapVisible(true);
   };
 
@@ -175,39 +174,6 @@ export default function NewReportScreen() {
     setLocation({ lat, lng, address });
     setLocationMode("map");
     setMapVisible(false);
-  };
-
-  const selectManual = () => {
-    clearLocation();
-    setLocationMode("manual");
-  };
-
-  const confirmManualAddress = async () => {
-    if (!manualAddress.trim()) {
-      Alert.alert("Atenção", "Escreve uma morada antes de confirmar.");
-      return;
-    }
-
-    setValidatingAddress(true);
-    try {
-      const result = await validateManualAddress(manualAddress.trim());
-
-      if (!result) {
-        Alert.alert("Morada inválida", ADDRESS_NOT_FOUND_MESSAGE);
-        setManualValidated(false);
-        return;
-      }
-
-      setLocation({
-        lat: result.lat,
-        lng: result.lng,
-        address: manualAddress.trim(),
-      });
-      setManualValidated(true);
-      Alert.alert("✅ Morada confirmada", "A morada está dentro do concelho de Cantanhede.");
-    } finally {
-      setValidatingAddress(false);
-    }
   };
 
   const pickImage = async () => {
@@ -234,16 +200,28 @@ export default function NewReportScreen() {
   };
 
   async function handleSubmit() {
-    if (!title.trim() || !description.trim()) {
-      Alert.alert("Campos em falta", "Preenche o título e a descrição.");
+    if (!title.trim()) {
+      Alert.alert("Campos em falta", "Preenche o título.");
+      return;
+    }
+    if (title.trim().length < 3) {
+      Alert.alert("Título inválido", "O título deve ter pelo menos 3 caracteres.");
+      return;
+    }
+    if (!description.trim()) {
+      Alert.alert("Campos em falta", "Preenche a descrição.");
+      return;
+    }
+    if (description.trim().length < 10) {
+      Alert.alert("Descrição inválida", "A descrição deve ter pelo menos 10 caracteres.");
       return;
     }
     if (category === "outro" && !customCategory.trim()) {
       Alert.alert("Campos em falta", "Descreve a categoria.");
       return;
     }
-    if (locationMode === "manual" && !manualValidated) {
-      Alert.alert("Morada não confirmada", "Clica em 'Confirmar morada' para validar a localização.");
+    if (!location) {
+      Alert.alert("Localização em falta", "Tens de indicar a localização da ocorrência.");
       return;
     }
 
@@ -252,15 +230,12 @@ export default function NewReportScreen() {
       let imageUrl = null;
       if (image) imageUrl = await uploadImage(image);
 
-      let finalLocation: LocationData | null = null;
-      if (location) finalLocation = location;
-
       await createReport({
         title: title.trim(),
         description: description.trim(),
         category,
         imageUrl,
-        location: finalLocation,
+        location,
       });
 
       Alert.alert("Sucesso", "Ocorrência criada com sucesso.");
@@ -289,19 +264,23 @@ export default function NewReportScreen() {
           placeholder="Título"
           placeholderTextColor="#999"
           value={title}
-          onChangeText={setTitle}
+          onChangeText={(text) => setTitle(sanitizeText(text))}
           style={styles.input}
+          maxLength={TITLE_MAX}
         />
+        <Text style={styles.charCount}>{title.length}/{TITLE_MAX}</Text>
 
         <TextInput
           placeholder="Descrição"
           placeholderTextColor="#999"
           value={description}
-          onChangeText={setDescription}
+          onChangeText={(text) => setDescription(sanitizeText(text))}
           style={[styles.input, styles.textArea]}
           multiline
           textAlignVertical="top"
+          maxLength={DESCRIPTION_MAX}
         />
+        <Text style={styles.charCount}>{description.length}/{DESCRIPTION_MAX}</Text>
 
         <Text style={styles.label}>Categoria</Text>
         <View style={styles.categoryGrid}>
@@ -331,21 +310,18 @@ export default function NewReportScreen() {
             placeholder="Descreve a categoria"
             placeholderTextColor="#999"
             value={customCategory}
-            onChangeText={setCustomCategory}
+            onChangeText={(text) => setCustomCategory(sanitizeText(text))}
             style={styles.input}
+            maxLength={50}
           />
         )}
 
-        <Text style={styles.label}>Localização</Text>
-        <Text style={styles.locationNote}>
-          ⚠️ Apenas são aceites localizações dentro do concelho de Cantanhede.
+        <Text style={styles.label}>
+          Localização <Text style={styles.required}>*</Text>
         </Text>
-
-        {!residentOfCantanhede && (
-          <Text style={styles.locationRestriction}>
-            ℹ️ Como não és residente de Cantanhede, só podes submeter ocorrências com localização GPS (tens de estar no concelho no momento).
-          </Text>
-        )}
+        <Text style={styles.locationNote}>
+          ⚠️ A localização é obrigatória e deve estar dentro do concelho de Cantanhede.
+        </Text>
 
         <View style={styles.locationButtons}>
           <TouchableOpacity
@@ -357,68 +333,23 @@ export default function NewReportScreen() {
             </Text>
           </TouchableOpacity>
 
-          {residentOfCantanhede && (
-            <>
-              <TouchableOpacity
-                style={[styles.locationBtn, locationMode === "map" && styles.locationBtnActive]}
-                onPress={openMapPicker}
-              >
-                <Text style={[styles.locationBtnText, locationMode === "map" && styles.locationBtnTextActive]}>
-                  🗺️ Escolher no mapa
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.locationBtn, locationMode === "manual" && styles.locationBtnActive]}
-                onPress={selectManual}
-              >
-                <Text style={[styles.locationBtnText, locationMode === "manual" && styles.locationBtnTextActive]}>
-                  ✏️ Escrever morada
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
+          <TouchableOpacity
+            style={[styles.locationBtn, locationMode === "map" && styles.locationBtnActive]}
+            onPress={openMapPicker}
+          >
+            <Text style={[styles.locationBtnText, locationMode === "map" && styles.locationBtnTextActive]}>
+              🗺️ Escolher no mapa
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {(locationMode === "gps" || locationMode === "map") && location?.address && (
+        {location?.address && (
           <View style={styles.locationBadge}>
             <Text style={styles.locationBadgeText} numberOfLines={2}>
               📍 {location.address}
             </Text>
             <TouchableOpacity onPress={clearLocation}>
               <Text style={styles.locationClear}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {locationMode === "manual" && (
-          <View style={styles.manualContainer}>
-            <TextInput
-              placeholder="Ex: Rua Manuel Lopes Porto, Cantanhede"
-              placeholderTextColor="#999"
-              value={manualAddress}
-              onChangeText={(text) => {
-                setManualAddress(text);
-                setManualValidated(false);
-              }}
-              style={styles.input}
-            />
-            <TouchableOpacity
-              style={[
-                styles.confirmAddressBtn,
-                manualValidated && styles.confirmAddressBtnSuccess,
-                validatingAddress && styles.confirmAddressBtnDisabled,
-              ]}
-              onPress={confirmManualAddress}
-              disabled={validatingAddress}
-            >
-              {validatingAddress ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.confirmAddressBtnText}>
-                  {manualValidated ? "✓ Morada confirmada" : "Confirmar morada"}
-                </Text>
-              )}
             </TouchableOpacity>
           </View>
         )}
@@ -499,18 +430,10 @@ const styles = StyleSheet.create({
     color: "#111",
   },
   textArea: { minHeight: 120 },
+  charCount: { fontSize: 11, color: "#999", textAlign: "right", marginTop: -8 },
   label: { fontSize: 14, fontWeight: "600", color: "#444", marginTop: 4 },
+  required: { color: "#D32F2F" },
   locationNote: { fontSize: 12, color: "#888", marginTop: -4 },
-  locationRestriction: {
-    fontSize: 12,
-    color: "#F57C00",
-    lineHeight: 18,
-    backgroundColor: "#FFF3E0",
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#FFE0B2",
-  },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   categoryBtn: {
     paddingVertical: 8,
@@ -547,16 +470,6 @@ const styles = StyleSheet.create({
   },
   locationBadgeText: { fontSize: 13, color: "#1565C0", flex: 1 },
   locationClear: { fontSize: 16, color: "#1565C0", paddingLeft: 8 },
-  manualContainer: { gap: 8 },
-  confirmAddressBtn: {
-    backgroundColor: "#2196F3",
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  confirmAddressBtnSuccess: { backgroundColor: "#388E3C" },
-  confirmAddressBtnDisabled: { backgroundColor: "#90CAF9" },
-  confirmAddressBtnText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   imageButtons: { flexDirection: "row", gap: 12 },
   imageBtn: {
     flex: 1,
@@ -584,20 +497,13 @@ const styles = StyleSheet.create({
   modalMap: { flex: 1 },
   modalButtons: { flexDirection: "row", gap: 12, padding: 16, backgroundColor: "#fff" },
   modalCancelBtn: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    alignItems: "center",
+    flex: 1, padding: 14, borderRadius: 10,
+    borderWidth: 1, borderColor: "#ccc", alignItems: "center",
   },
   modalCancelBtnText: { fontSize: 15, color: "#555", fontWeight: "600" },
   modalConfirmBtn: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: "#2196F3",
-    alignItems: "center",
+    flex: 1, padding: 14, borderRadius: 10,
+    backgroundColor: "#2196F3", alignItems: "center",
   },
   modalConfirmBtnText: { fontSize: 15, color: "#fff", fontWeight: "700" },
 });
